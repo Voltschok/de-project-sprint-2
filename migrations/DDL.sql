@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS public.shipping_agreement cascade;
 DROP TABLE IF EXISTS public.shipping_country_rates cascade;
 DROP TABLE IF EXISTS public.shipping_status cascade;
 DROP TABLE IF EXISTS public.shipping_info cascade;
-DROP TABLE IF EXISTS public.shipping_datamart cascade;
+ 
  
 
 CREATE TABLE public.shipping_transfer(
@@ -30,7 +30,7 @@ CREATE TABLE public.shipping_country_rates (
 );
 
 CREATE TABLE public.shipping_status(
-	shipping_id serial PRIMARY KEY,
+	shipping_id int8 PRIMARY KEY,
 	shipping_status text NULL,
 	shipping_state text NULL,
 	shipping_start_fact_datetime timestamp NULL,
@@ -39,7 +39,7 @@ CREATE TABLE public.shipping_status(
  
 CREATE TABLE public.shipping_info(
 	 
-	shipping_id serial not null PRIMARY KEY,
+	shipping_id int8 not null PRIMARY KEY,
 	vendor_id int8 NULL,
 	payment_amount numeric(14,3) NULL,
 	shipping_plan_datetime timestamp NULL,
@@ -51,4 +51,3 @@ CREATE TABLE public.shipping_info(
  	FOREIGN KEY (shipping_country_rate_id) REFERENCES public.shipping_country_rates(id) ON UPDATE CASCADE,
 	FOREIGN KEY (shipping_agreement_id ) REFERENCES public.shipping_agreement(agreement_id) ON UPDATE CASCADE
 );
-
