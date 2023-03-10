@@ -25,23 +25,20 @@ FROM public.shipping s;
  
 INSERT INTO public.shipping_status
 (shipping_id, shipping_status, shipping_state, shipping_start_fact_datetime, shipping_end_fact_datetime)
-WITH vl1 AS  (SELECT  shippingid, state, status, max_date
-FROM  (SELECT *,
-          ROW_NUMBER() OVER (PARTITION BY shippingid
-                             ORDER BY state_datetime DESC) AS max_date
-   FROM shipping) AS t
-),
-vl2 AS (SELECT shippingid, state_datetime AS shipping_end_fact_datetime
-FROM shipping WHERE state ='recieved'),
-vl3 AS (SELECT  shippingid, state_datetime AS shipping_start_fact_datetime
-FROM shipping WHERE state ='booked')
-SELECT  vl1.shippingid, vl1.status, vl1.state, 
-vl3.shipping_start_fact_datetime, vl2.shipping_end_fact_datetime
+WITH vl1 AS  (
+select distinct shippingid, 
+FIRST_VALUE (status) OVER (PARTITION BY shippingid ORDER BY state_datetime DESC) as shipping_status,
+FIRST_VALUE (state) OVER (PARTITION BY shippingid ORDER BY state_datetime DESC) as shipping_state
+FROM shipping), 
+vl2 as (select distinct shippingid,  
+min(CASE WHEN state = 'booked' THEN state_datetime END) AS shipping_start_fact_datetime,
+max(CASE WHEN state = 'recieved' THEN state_datetime END) AS shipping_end_fact_datetime 
+from shipping group by shippingid)
+SELECT  vl1.shippingid, vl1.shipping_status, vl1.shipping_state, 
+vl2.shipping_start_fact_datetime, vl2.shipping_end_fact_datetime
 FROM vl1
-LEFT JOIN vl2 ON vl1.shippingid=vl2.shippingid
-LEFT JOIN vl3 ON vl1.shippingid=vl3.shippingid
-WHERE vl1.max_date=1;
-
+LEFT JOIN vl2 ON vl1.shippingid=vl2.shippingid;
+ 
 
 INSERT INTO public.shipping_info(
 					shipping_id , 
@@ -51,7 +48,7 @@ INSERT INTO public.shipping_info(
  					shipping_transfer_id,
  					shipping_agreement_id,
  					shipping_country_rate_id) 
-SELECT  v1.shippingid , 
+SELECT  distinct v1.shippingid , 
 		v1.vendorid, 
 		v1.payment_amount,
 		v1.shipping_plan_datetime,
@@ -66,29 +63,20 @@ FROM public.shipping)     AS v1
 LEFT JOIN public.shipping_transfer str ON v1.shipping_transfer_description=str.transfer_type||':'||str.transfer_model
 LEFT JOIN public.shipping_country_rates scr ON v1.shipping_country=scr.shipping_country;
 
-INSERT INTO public.shipping_datamart (
-	shipping_id,
-	vendor_id,
-	transfer_type,
-	full_day_at_shipping,
-	is_delay,
-	is_shipping_finish,
-	delay_day_at_shipping,
-	payment_amount,
-	vat,
-	profit
-)  
-SELECT distinct psi1.shipping_id,vendor_id, str1.transfer_type, psi1.payment_amount, 
-date_part('day', age( pss.shipping_end_fact_datetime,pss.shipping_start_fact_datetime))  AS  full_day_at_shipping,
+ 
+create or replace view public.shipping_datamart  as
+SELECT distinct psi1.shipping_id,
+	vendor_id, 
+	str1.transfer_type, 
+ 	EXTRACT (DAY FROM (pss.shipping_end_fact_datetime - pss.shipping_start_fact_datetime))  AS  full_day_at_shipping,
 	CASE WHEN  pss.shipping_end_fact_datetime>psi1.shipping_plan_datetime
-	THEN 1  ELSE 0 
-	END AS is_delay,
+	THEN 1  ELSE 0 	END AS is_delay,
 	CASE WHEN pss.shipping_status='finished'
-	THEN 1  ELSE 0 
-	END AS is_shipping_finish,
+	THEN 1  ELSE 0 	END AS is_shipping_finish,
 	CASE WHEN pss.shipping_end_fact_datetime>psi1.shipping_plan_datetime
-	THEN date_part('day', age( pss.shipping_end_fact_datetime, psi1.shipping_plan_datetime))   ELSE 0  
-	END AS delay_day_at_shipping,
+	then EXTRACT (DAY FROM (pss.shipping_end_fact_datetime - psi1.shipping_plan_datetime)) 
+	ELSE 0  END AS delay_day_at_shipping,
+	psi1.payment_amount,
 	psi1.payment_amount*(scr.shipping_country_base_rate+sag.agreement_rate+str1.shipping_transfer_rate) AS vat,
 	psi1.payment_amount*sag.agreement_commission AS profit
 FROM public.shipping_info psi1
@@ -96,3 +84,6 @@ LEFT JOIN public.shipping_transfer AS str1 ON str1.transfer_type_id=psi1.shippin
 LEFT JOIN public.shipping_status AS pss ON pss.shipping_id=psi1.shipping_id 
 LEFT JOIN public.shipping_country_rates AS scr ON scr.id=psi1.shipping_country_rate_id
 LEFT JOIN public.shipping_agreement  AS sag ON sag.agreement_id=psi1.shipping_agreement_id;
+
+ 
+
